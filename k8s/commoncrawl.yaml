@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: commoncrawl
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: commoncrawl
+  template:
+    metadata:
+      labels:
+        app: commoncrawl
+    spec:
+      containers:
+      - name: commoncrawl
+        image: commoncrawl-worker:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: commoncrawl
+spec:
+  selector:
+    app: commoncrawl
+  ports:
+    - port: 5000
+      targetPort: 5000

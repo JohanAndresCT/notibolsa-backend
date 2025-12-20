@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: colcap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: colcap
+  template:
+    metadata:
+      labels:
+        app: colcap
+    spec:
+      containers:
+      - name: colcap
+        image: colcap-fetcher:latest
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: colcap
+spec:
+  selector:
+    app: colcap
+  ports:
+    - port: 5000
+      targetPort: 5000

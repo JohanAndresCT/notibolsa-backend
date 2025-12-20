@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aggregator
+  template:
+    metadata:
+      labels:
+        app: aggregator
+    spec:
+      containers:
+      - name: aggregator
+        image: aggregator:latest
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aggregator
+spec:
+  selector:
+    app: aggregator
+  ports:
+    - port: 5000
+      targetPort: 5000
