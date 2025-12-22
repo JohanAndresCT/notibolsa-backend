@@ -2,12 +2,17 @@ import requests
 import matplotlib.pyplot as plt
 import sys
 
+
+
 term = sys.argv[1] if len(sys.argv) > 1 else "inflacion"
-
 DATA_URL = f"http://aggregator:5000/aggregate?term={term}"
-
 resp = requests.get(DATA_URL)
-data = resp.json()["data"]
+try:
+	data = resp.json()
+except Exception as e:
+	print(f"Error al decodificar JSON. Código de estado: {resp.status_code}")
+	print(f"Respuesta cruda: {resp.text}")
+	raise
 
 dates = [d["date"] for d in data]
 news = [d["news"] for d in data]

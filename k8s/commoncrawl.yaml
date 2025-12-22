@@ -14,8 +14,8 @@ spec:
     spec:
       containers:
       - name: commoncrawl
-        image: commoncrawl-worker:latest
-        imagePullPolicy: IfNotPresent
+        image: notibolsa/commoncrawl-worker:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 5000
 ---
