@@ -6,6 +6,8 @@ import gzip
 from io import BytesIO
 import json
 from warcio.archiveiterator import ArchiveIterator
+import pandas as pd
+import re
 
 app = Flask(__name__)
 
@@ -62,6 +64,30 @@ def process():
     print(f"[DEBUG] Parámetro index recibido: '{index}'", flush=True)
     keyword = request.args.get("keyword")
     print(f"[DEBUG] Parámetro keyword recibido: '{keyword}'", flush=True)
+    start_date = request.args.get("start")
+    print(f"[DEBUG] Parámetro start_date recibido: '{start_date}'", flush=True)
+    end_date = request.args.get("end")
+    print(f"[DEBUG] Parámetro end_date recibido: '{end_date}'", flush=True)
+    frequency = request.args.get("freq")
+    print(f"[DEBUG] Parámetro frequency recibido: '{frequency}'", flush=True)
+
+    #Crear los rangos entre start y end segun la frequency:
+    date_ranges = []
+    if frequency=="daily":     
+        #Crear los rangos diarios entre start y end
+        for date in pd.date_range(start=start_date, end=end_date, freq='D'):
+            date_ranges.append(date.strftime('%Y-%m-%d'))
+    elif frequency=="weekly":
+        #Crear los rangos semanales entre start y end
+        for date in pd.date_range(start=start_date, end=end_date, freq='W'):
+            date_ranges.append(date.strftime('%Y-%m-%d'))
+    elif frequency=="monthly":
+        print("hello")
+        #Crear los rangos mensuales entre start y end
+        for date in pd.date_range(start=start_date, end=end_date, freq='ME'):
+            date_ranges.append(date.strftime('%Y-%m-%d'))
+    
+    print(f"[DEBUG] Rangos de fechas creados: {date_ranges}", flush=True)
 
     if not domain:
         print("[DEBUG] Falta el parámetro term, devolviendo 400", flush=True)
@@ -81,7 +107,7 @@ def process():
 
     # Si se pasa keyword, buscar páginas que la contengan usando warcio
     if keyword:
-        max_results = 100  # Limitar para evitar sobrecarga
+        max_results = 5  # Limitar para evitar sobrecarga
         matching_urls = []
         for idx in indices_to_search:
             url = (
@@ -122,6 +148,16 @@ def process():
                                             for script in soup(["script", "style"]):
                                                 script.extract()
                                             text = soup.get_text(separator=' ', strip=True).lower()
+                                            #Hallar la fecha en el texto
+                                            # Pattern matches: "DD MMM YYYY"
+                                            date_pattern = r'(\d{1,2}\s+\w{3}\s+\d{4}\s)'
+                                            date_match = re.search(date_pattern, text)
+                                            #print("Texto: ", text, flush=True)
+                                            if date_match:
+                                                fecha_encontrada = date_match.group(1)
+                                                print("Fecha encontrada: ", fecha_encontrada, flush=True)
+                                            else:
+                                                print("No se encontró fecha en el formato esperado", flush=True)
                                             if keyword.lower() in text:
                                                 matching_urls.append(page_url)
                                                 print(f"Coincidencia encontrada: {page_url}", flush=True)
