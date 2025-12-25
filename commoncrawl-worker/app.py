@@ -8,8 +8,129 @@ import json
 from warcio.archiveiterator import ArchiveIterator
 import pandas as pd
 import re
+from datetime import datetime
 
 app = Flask(__name__)
+
+
+def normalize_date(date_str: str) -> str | None:
+    """
+    Convert date string to ISO 8601 format for comparisons.
+    Handles: DD/MM/YYYY HH:MM:SS and 2020-11-23T23:09:52.631Z formats.
+    Returns: YYYY-MM-DDTHH:MM:SS or None if parsing fails.
+    """
+    if not date_str or not isinstance(date_str, str):
+        return None
+    
+    date_str = date_str.strip()
+    
+    # List of formats to try
+    formats = [
+        '%d/%m/%Y %H:%M:%S',    # 23/10/2020 13:45:00
+        '%d/%m/%Y %H:%M',       # 23/10/2020 13:45
+        '%Y-%m-%dT%H:%M:%S.%fZ', # 2020-11-23T23:09:52.631Z
+        '%Y-%m-%dT%H:%M:%SZ',    # 2020-11-23T23:09:52Z
+        '%Y-%m-%d %H:%M:%S',     # 2020-11-23 23:09:52
+        '%Y-%m-%d',              # 2020-11-23
+    ]
+    
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(date_str, fmt)
+            return dt.isoformat()
+        except ValueError:
+            continue
+    
+    # If no format matches, return original string
+    return date_str
+
+
+def extract_date_from_soup(soup):
+    """
+    Extract publication date from BeautifulSoup object using multiple fallback methods.
+    Returns: normalized date string or None
+    """
+    date_news = None
+    
+    # Method 1: JSON-LD (NewsArticle/Article/BlogPosting)
+    try:
+        for ld in soup.find_all('script', type='application/ld+json'):
+            raw = ld.string or ld.get_text(strip=True)
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            objs = data if isinstance(data, list) else [data]
+            for obj in objs:
+                if isinstance(obj, dict) and obj.get("@type") in ("NewsArticle", "Article", "BlogPosting"):
+                    dp = obj.get("datePublished")
+                    if dp:
+                        date_news = dp
+                        print(f"[DEBUG] datePublished (JSON-LD): {date_news}", flush=True)
+                        return normalize_date(date_news)
+    except Exception as e:
+        print(f"[DEBUG] Error extrayendo JSON-LD: {e}", flush=True)
+    
+    # Method 2: Meta tags (Open Graph, Twitter Card, article:published_time)
+    meta_properties = [
+        ('property', 'article:published_time'),
+        ('property', 'og:published_time'),
+        ('name', 'publish_date'),
+        ('name', 'article.published'),
+        ('name', 'date'),
+    ]
+    for attr, value in meta_properties:
+        meta = soup.find('meta', {attr: value})
+        if meta and meta.get('content'):
+            date_news = meta['content']
+            print(f"[DEBUG] Date from meta tag ({attr}={value}): {date_news}", flush=True)
+            return normalize_date(date_news)
+    
+    # Method 3: Time tag with datetime attribute
+    time_tag = soup.find('time', {'datetime': True})
+    if time_tag and time_tag.get('datetime'):
+        date_news = time_tag['datetime']
+        print(f"[DEBUG] Date from <time> tag: {date_news}", flush=True)
+        return normalize_date(date_news)
+    
+    # Method 4: Regex pattern for common date formats in visible text
+    # Pattern: "DD de [mes] de YYYY - HH:MM a. m." (El Espectador format)
+    months_es = {
+        'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+        'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+        'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+    }
+    text = soup.get_text()
+    date_pattern = r'(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})\s+-\s+(\d{1,2}):(\d{2})\s+(a\.|p\.)\s+m\.'
+    match = re.search(date_pattern, text)
+    if match:
+        day, month_name, year, hour, minute, meridiem = match.groups()
+        month = months_es.get(month_name.lower())
+        if month:
+            meridiem_24 = int(hour) if meridiem == 'a.' else int(hour) + 12
+            date_news = f"{day}/{month}/{year} {meridiem_24:02d}:{minute}:00"
+            print(f"[DEBUG] Date from regex (ES format): {date_news}", flush=True)
+            return normalize_date(date_news)
+    
+    # Method 5: Look for common date containers by class
+    date_containers = [
+        ('div', 'Datetime ArticleHeader-Date'),
+        ('div', 'article-date'),
+        ('div', 'post-date'),
+        ('div', 'published-date'),
+        ('span', 'publication-date'),
+    ]
+    for tag_name, class_name in date_containers:
+        tag = soup.find(tag_name, class_=class_name)
+        if tag:
+            date_news = tag.get_text(strip=True)
+            print(f"[DEBUG] Date from {tag_name}.{class_name}: {date_news}", flush=True)
+            return normalize_date(date_news)
+    
+    print("[DEBUG] No se encontró la fecha en la página usando ningún método.", flush=True)
+    return None
 
 
 CC_INDICES = [
@@ -64,30 +185,19 @@ def process():
     print(f"[DEBUG] Parámetro index recibido: '{index}'", flush=True)
     keyword = request.args.get("keyword")
     print(f"[DEBUG] Parámetro keyword recibido: '{keyword}'", flush=True)
-    start_date = request.args.get("start")
+    start_date = request.args.get("start_date")
     print(f"[DEBUG] Parámetro start_date recibido: '{start_date}'", flush=True)
-    end_date = request.args.get("end")
+    end_date = request.args.get("end_date")
     print(f"[DEBUG] Parámetro end_date recibido: '{end_date}'", flush=True)
-    frequency = request.args.get("freq")
-    print(f"[DEBUG] Parámetro frequency recibido: '{frequency}'", flush=True)
 
-    #Crear los rangos entre start y end segun la frequency:
+    #Crear los rangos entre start y end con frequency MS (month start):
     date_ranges = []
-    if frequency=="daily":     
-        #Crear los rangos diarios entre start y end
-        for date in pd.date_range(start=start_date, end=end_date, freq='D'):
-            date_ranges.append(date.strftime('%Y-%m-%d'))
-    elif frequency=="weekly":
-        #Crear los rangos semanales entre start y end
-        for date in pd.date_range(start=start_date, end=end_date, freq='W'):
-            date_ranges.append(date.strftime('%Y-%m-%d'))
-    elif frequency=="monthly":
-        print("hello")
-        #Crear los rangos mensuales entre start y end
-        for date in pd.date_range(start=start_date, end=end_date, freq='ME'):
-            date_ranges.append(date.strftime('%Y-%m-%d'))
-    
+        #Crear los rangos mensuales entre start y end (primer día de cada mes)
+    for date in pd.date_range(start=start_date, end=end_date, freq='MS'):
+        print("Date: ", date, flush=True)
+        date_ranges.append([date.strftime('%Y-%m-%d'), 0])
     print(f"[DEBUG] Rangos de fechas creados: {date_ranges}", flush=True)
+
 
     if not domain:
         print("[DEBUG] Falta el parámetro term, devolviendo 400", flush=True)
@@ -107,7 +217,7 @@ def process():
 
     # Si se pasa keyword, buscar páginas que la contengan usando warcio
     if keyword:
-        max_results = 5  # Limitar para evitar sobrecarga
+        max_results = 10  # Limitar para evitar sobrecarga
         matching_urls = []
         for idx in indices_to_search:
             url = (
@@ -145,23 +255,43 @@ def process():
                                         if warc_record.rec_type == 'response' and 'html' in warc_record.http_headers.get('Content-Type', '').lower():
                                             html_content = warc_record.content_stream().read().decode('utf-8', errors='ignore')
                                             soup = BeautifulSoup(html_content, 'html.parser')
-                                            for script in soup(["script", "style"]):
-                                                script.extract()
-                                            text = soup.get_text(separator=' ', strip=True).lower()
-                                            #Hallar la fecha en el texto
-                                            # Pattern matches: "DD MMM YYYY"
-                                            date_pattern = r'(\d{1,2}\s+\w{3}\s+\d{4}\s)'
-                                            date_match = re.search(date_pattern, text)
-                                            #print("Texto: ", text, flush=True)
-                                            if date_match:
-                                                fecha_encontrada = date_match.group(1)
-                                                print("Fecha encontrada: ", fecha_encontrada, flush=True)
-                                            else:
-                                                print("No se encontró fecha en el formato esperado", flush=True)
-                                            if keyword.lower() in text:
+
+                                            #text = soup.get_text(separator=' ', strip=True).lower()
+
+                                            if keyword.lower() in page_url:
                                                 matching_urls.append(page_url)
                                                 print(f"Coincidencia encontrada: {page_url}", flush=True)
-                                                break
+
+                                                # Intentar extraer datePublished desde JSON-LD (NewsArticle/Article/BlogPosting)
+                                                date_news = extract_date_from_soup(soup)
+                                                
+                                                # Limpiar scripts y estilos para el resto del parseo
+                                                for tag in soup(["script", "style"]):
+                                                    tag.extract()
+                                                
+                                                if not date_news:
+                                                    print("No se encontró la fecha en la página.", flush=True)
+                                                else:
+                                                    # Normalizar fecha para comparaciones
+                                                    #normalized_date = normalize_date(date_news)
+                                                    print(f"[DEBUG] Original date: {date_news}", flush=True)
+                                                    #print(f"[DEBUG] Normalized date: {normalized_date}", flush=True)
+                                                    #date_news = normalized_date
+                                                
+                                                # Contar el numero de noticias por rango de fecha
+                                                for i in range(len(date_ranges)-1):
+                                                    if date_news<=date_ranges[i][0]:
+                                                        if i==0:
+                                                            print(f"[DEBUG] La noticia del {date_news} cae antes del primer rango {date_ranges[i][0]}", flush=True)
+                                                            
+                                                        else:
+                                                            if date_news>date_ranges[i-1][0]:
+                                                                date_ranges[i-1][1] += 1
+                                                                print(f"[DEBUG] Incrementando contador para rango {date_ranges[i-1]}", flush=True)
+                                                    else:
+                                                        print(f"[DEBUG] La noticia del {date_news} cae después del rango {date_ranges[i][0]}", flush=True)
+                
+                                                
                         except Exception as e:
                             print(f"Error al descargar/procesar WARC: {e}", flush=True)
             except Exception as e:
@@ -173,7 +303,8 @@ def process():
             "indices_searched": len(indices_to_search),
             "keyword": keyword,
             "matching_urls": matching_urls,
-            "count": len(matching_urls)
+            "count": len(matching_urls),
+            "date_ranges_counts": date_ranges
         })
 
     # Si no hay keyword, solo contar
