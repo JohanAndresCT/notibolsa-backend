@@ -5,12 +5,16 @@ from bs4 import BeautifulSoup
 import gzip
 from io import BytesIO
 import json
+import tempfile
 from warcio.archiveiterator import ArchiveIterator
 import pandas as pd
 import re
 from datetime import datetime
 
 app = Flask(__name__)
+
+# Set to track seen titles and avoid duplicates
+seen_titles = set()
 
 
 def normalize_date(date_str: str) -> str | None:
@@ -72,62 +76,31 @@ def extract_date_from_soup(soup):
                         return normalize_date(date_news)
     except Exception as e:
         print(f"[DEBUG] Error extrayendo JSON-LD: {e}", flush=True)
-    
-    # Method 2: Meta tags (Open Graph, Twitter Card, article:published_time)
-    meta_properties = [
-        ('property', 'article:published_time'),
-        ('property', 'og:published_time'),
-        ('name', 'publish_date'),
-        ('name', 'article.published'),
-        ('name', 'date'),
-    ]
-    for attr, value in meta_properties:
-        meta = soup.find('meta', {attr: value})
-        if meta and meta.get('content'):
-            date_news = meta['content']
-            print(f"[DEBUG] Date from meta tag ({attr}={value}): {date_news}", flush=True)
-            return normalize_date(date_news)
-    
-    # Method 3: Time tag with datetime attribute
-    time_tag = soup.find('time', {'datetime': True})
-    if time_tag and time_tag.get('datetime'):
-        date_news = time_tag['datetime']
-        print(f"[DEBUG] Date from <time> tag: {date_news}", flush=True)
-        return normalize_date(date_news)
-    
-    # Method 4: Regex pattern for common date formats in visible text
-    # Pattern: "DD de [mes] de YYYY - HH:MM a. m." (El Espectador format)
-    months_es = {
-        'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
-        'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
-        'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
-    }
-    text = soup.get_text()
-    date_pattern = r'(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})\s+-\s+(\d{1,2}):(\d{2})\s+(a\.|p\.)\s+m\.'
-    match = re.search(date_pattern, text)
-    if match:
-        day, month_name, year, hour, minute, meridiem = match.groups()
-        month = months_es.get(month_name.lower())
-        if month:
-            meridiem_24 = int(hour) if meridiem == 'a.' else int(hour) + 12
-            date_news = f"{day}/{month}/{year} {meridiem_24:02d}:{minute}:00"
-            print(f"[DEBUG] Date from regex (ES format): {date_news}", flush=True)
-            return normalize_date(date_news)
-    
-    # Method 5: Look for common date containers by class
-    date_containers = [
-        ('div', 'Datetime ArticleHeader-Date'),
-        ('div', 'article-date'),
-        ('div', 'post-date'),
-        ('div', 'published-date'),
-        ('span', 'publication-date'),
-    ]
-    for tag_name, class_name in date_containers:
-        tag = soup.find(tag_name, class_=class_name)
-        if tag:
-            date_news = tag.get_text(strip=True)
-            print(f"[DEBUG] Date from {tag_name}.{class_name}: {date_news}", flush=True)
-            return normalize_date(date_news)
+
+    # Method 2: Extract first_publish_date from Fusion.globalContent JavaScript object
+    try:
+        scripts = soup.find_all('script', type='application/javascript')
+        for script in scripts:
+            content = script.string or script.get_text()
+            if content and 'Fusion.globalContent' in content:
+                # Extract JSON from Fusion.globalContent=...;
+                start = content.find('Fusion.globalContent=')
+                if start != -1:
+                    start += len('Fusion.globalContent=')
+                    end = content.find(';', start)
+                    if end != -1:
+                        json_str = content[start:end].strip()
+                        try:
+                            data = json.loads(json_str)
+                            first_pub = data.get('first_publish_date')
+                            if first_pub:
+                                date_news = first_pub
+                                print(f"[DEBUG] first_publish_date (Fusion): {date_news}", flush=True)
+                                return normalize_date(date_news)
+                        except Exception as e:
+                            print(f"[DEBUG] Error parsing Fusion.globalContent: {e}", flush=True)
+    except Exception as e:
+        print(f"[DEBUG] Error extrayendo first_publish_date: {e}", flush=True)
     
     print("[DEBUG] No se encontró la fecha en la página usando ningún método.", flush=True)
     return None
@@ -259,8 +232,22 @@ def process():
                                             #text = soup.get_text(separator=' ', strip=True).lower()
 
                                             if keyword.lower() in page_url:
-                                                matching_urls.append(page_url)
                                                 print(f"Coincidencia encontrada: {page_url}", flush=True)
+                                                
+                                                # Extract title
+                                                title_tag = soup.find('title')
+                                                title = title_tag.get_text(strip=True) if title_tag else "No title"
+                                                print(f"[DEBUG] Title: {title}", flush=True)
+                                                
+                                                # Check if title already seen
+                                                if title in seen_titles:
+                                                    print(f"[DEBUG] Título duplicado, saltando: {title}", flush=True)
+                                                    continue
+                                                
+                                                seen_titles.add(title)
+                                                matching_urls.append(page_url)
+                                                print(f"[DEBUG] Nuevo título agregado al conjunto. Total títulos únicos: {len(seen_titles)}", flush=True)
+                                                
 
                                                 # Intentar extraer datePublished desde JSON-LD (NewsArticle/Article/BlogPosting)
                                                 date_news = extract_date_from_soup(soup)
