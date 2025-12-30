@@ -1,4 +1,3 @@
-
 import requests
 from flask import Flask, request, jsonify
 from bs4 import BeautifulSoup
@@ -6,9 +5,9 @@ import gzip
 from io import BytesIO
 import json
 from warcio.archiveiterator import ArchiveIterator
+from datetime import datetime
 
 app = Flask(__name__)
-
 
 CC_INDICES = [
     "CC-MAIN-2008-2009", "CC-MAIN-2009-2010",
@@ -63,15 +62,29 @@ def process():
     keyword = request.args.get("keyword")
     print(f"[DEBUG] Parámetro keyword recibido: '{keyword}'", flush=True)
 
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    print(f"[DEBUG] Parámetro start_date recibido: '{start_date}'", flush=True)
+    print(f"[DEBUG] Parámetro end_date recibido: '{end_date}'", flush=True)
+
+    date_ranges = []
+    if start_date and end_date:
+        try:
+            from dateutil.relativedelta import relativedelta
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            end = datetime.strptime(end_date, "%Y-%m-%d")
+            current = start.replace(day=1)
+            while current <= end:
+                date_ranges.append([current.strftime("%Y-%m-%d"), 0])
+                current += relativedelta(months=1)
+            print(f"[DEBUG] Rangos de fechas creados: {date_ranges}", flush=True)
+        except Exception as e:
+            print(f"[DEBUG] Error creando rangos de fechas: {e}", flush=True)
+
     if not domain:
         print("[DEBUG] Falta el parámetro term, devolviendo 400", flush=True)
         return jsonify({"error": "Missing term"}), 400
-        if not index:
-            print("[DEBUG] Falta el parámetro index, devolviendo 400")
-            return jsonify({"error": "Missing index"}), 400
-        indices_to_search = [index.strip()]
 
-    # Permitir múltiples índices separados por coma y buscar solo en esos
     if index:
         indices_to_search = [i.strip() for i in index.split(',') if i.strip()]
         print(f"[DEBUG] Indices a buscar: {indices_to_search}", flush=True)
@@ -79,10 +92,11 @@ def process():
         indices_to_search = CC_INDICES
         print(f"[DEBUG] Usando todos los índices predefinidos", flush=True)
 
-    # Si se pasa keyword, buscar páginas que la contengan usando warcio
     if keyword:
-        max_results = 100  # Limitar para evitar sobrecarga
+        max_results = 10
         matching_urls = []
+        lines_count = 0
+
         for idx in indices_to_search:
             url = (
                 f"https://index.commoncrawl.org/{idx}-index"
@@ -93,11 +107,11 @@ def process():
                 r = requests.get(url, timeout=15)
                 if r.status_code == 200:
                     lines = r.text.splitlines()
+                    lines_count += len(lines)
                     print(f"Líneas recibidas: {len(lines)}", flush=True)
                     for i, line in enumerate(lines):
                         if len(matching_urls) >= max_results:
                             break
-                        record = None
                         try:
                             record = json.loads(line)
                         except Exception as e:
@@ -107,7 +121,6 @@ def process():
                         offset = int(record.get("offset", 0))
                         length = int(record.get("length", 0))
                         page_url = record.get("url", "")
-                        # Descargar fragmento WARC
                         warc_url = f"https://data.commoncrawl.org/{warc_filename}"
                         headers = {"Range": f"bytes={offset}-{offset+length-1}"}
                         try:
@@ -132,13 +145,17 @@ def process():
                 print(f"Error al consultar {url}: {e}", flush=True)
             if len(matching_urls) >= max_results:
                 break
-        return jsonify({
+        response = {
             "domain": domain,
             "indices_searched": len(indices_to_search),
             "keyword": keyword,
             "matching_urls": matching_urls,
-            "count": len(matching_urls)
-        })
+            "count": len(matching_urls),
+            "lines_count": lines_count
+        }
+        if date_ranges:
+            response["date_ranges_counts"] = date_ranges
+        return jsonify(response)
 
     # Si no hay keyword, solo contar
     total = 0
@@ -167,4 +184,4 @@ def process():
     })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5003)
