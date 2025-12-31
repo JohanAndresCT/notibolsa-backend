@@ -1,12 +1,17 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import os
+
 import requests
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-COMMONCRAWL_SERVICE = "http://127.0.0.1:5003/process"
-COLCAP_SERVICE = "http://127.0.0.1:5001/colcap"
+COMMONCRAWL_SERVICE = os.getenv(
+    "COMMONCRAWL_SERVICE", "http://commoncrawl:5003/process"
+)
+COLCAP_SERVICE = os.getenv("COLCAP_SERVICE", "http://colcap:5001/colcap")
+
 
 @app.route("/aggregate", methods=["GET"])
 def aggregate():
@@ -48,9 +53,7 @@ def aggregate():
         if start and end:
             print("[Aggregator] Enviando a COLCAP:", {"start": start, "end": end})
             colcap_resp = requests.get(
-                COLCAP_SERVICE,
-                params={"start": start, "end": end},
-                timeout=80
+                COLCAP_SERVICE, params={"start": start, "end": end}, timeout=80
             )
             print("[Aggregator] Respuesta COLCAP:", colcap_resp.status_code)
             print("[Aggregator] JSON COLCAP:", colcap_resp.json())
@@ -83,25 +86,30 @@ def aggregate():
         for item in colcap_data:
             if isinstance(item, dict) and "date" in item and "value" in item:
                 date = item["date"]
-                combined.append({
-                    "date": date,
-                    "news": cc["count"],  # usa el total de noticias encontradas
-                    "colcap": item["value"]
-                })
+                combined.append(
+                    {
+                        "date": date,
+                        "news": cc["count"],  # usa el total de noticias encontradas
+                        "colcap": item["value"],
+                    }
+                )
     else:
         for item in colcap_data:
             if isinstance(item, dict) and "date" in item and "value" in item:
                 date = item["date"]
-                combined.append({
-                    "date": date,
-                    "news": news_by_date.get(date, 0),
-                    "colcap": item["value"]
-                })
+                combined.append(
+                    {
+                        "date": date,
+                        "news": news_by_date.get(date, 0),
+                        "colcap": item["value"],
+                    }
+                )
 
     print("[Aggregator] Datos combinados:", combined)
     response["combined"] = combined
 
     return jsonify(response)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5002)
