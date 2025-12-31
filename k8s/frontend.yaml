@@ -1,31 +1,33 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: colcap
+  name: frontend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: colcap
+      app: frontend
   template:
     metadata:
       labels:
-        app: colcap
+        app: frontend
     spec:
       containers:
-        - name: colcap
-          image: esgore/notibolsa-colcap:latest
+        - name: frontend
+          image: esgore/notibolsa-frontend:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 5001
+            - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: colcap
+  name: frontend
 spec:
+  type: NodePort
   selector:
-    app: colcap
+    app: frontend
   ports:
-    - port: 5001
-      targetPort: 5001
+    - port: 80
+      targetPort: 80
+      nodePort: 30080

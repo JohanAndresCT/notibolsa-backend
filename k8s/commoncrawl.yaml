@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: commoncrawl
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: commoncrawl
@@ -14,8 +14,8 @@ spec:
     spec:
       containers:
         - name: commoncrawl
-          image: commoncrawl:latest
-          imagePullPolicy: Never
+          image: esgore/notibolsa-commoncrawl:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 5003
 ---
