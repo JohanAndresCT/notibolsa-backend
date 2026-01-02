@@ -14,8 +14,8 @@ spec:
     spec:
       containers:
         - name: colcap
-          image: esgore/notibolsa-colcap:latest
-          imagePullPolicy: Always
+          image: colcap:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 5001
 ---

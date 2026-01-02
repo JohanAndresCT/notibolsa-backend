@@ -14,8 +14,8 @@ spec:
     spec:
       containers:
         - name: aggregator
-          image: esgore/notibolsa-aggregator:latest
-          imagePullPolicy: Always
+          image: aggregator:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 5002
           env:

@@ -7,10 +7,8 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-COMMONCRAWL_SERVICE = os.getenv(
-    "COMMONCRAWL_SERVICE", "http://commoncrawl:5003/process"
-)
-COLCAP_SERVICE = os.getenv("COLCAP_SERVICE", "http://colcap:5001/colcap")
+COMMONCRAWL_SERVICE = os.getenv("COMMONCRAWL_SERVICE", "http://127.0.0.1:5003/process")
+COLCAP_SERVICE = os.getenv("COLCAP_SERVICE", "http://127.0.0.1:5001/colcap")
 
 
 @app.route("/aggregate", methods=["GET"])
