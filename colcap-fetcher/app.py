@@ -1,82 +1,51 @@
+
 from flask import Flask, request, jsonify
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
+import cloudscraper
+import json
 
 app = Flask(__name__)
+
 
 @app.route("/colcap", methods=["GET"])
 def get_colcap():
     start_date = request.args.get("start")
     end_date = request.args.get("end")
-
     if not start_date or not end_date:
         return jsonify({"error": "Missing date parameters"}), 400
 
-    # Validar formato YYYY-MM-DD
+    url = f"https://api.investing.com/api/financialdata/historical/49642?start-date={start_date}&end-date={end_date}&time-frame=Daily&add-missing-rows=false"
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'es-419,es;q=0.9',
+        'Domain-id': 'es',
+        'Origin': 'https://es.investing.com',
+        'Referer': 'https://es.investing.com/',
+    }
+    scraper = cloudscraper.create_scraper(
+        browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
+    )
     try:
-        print(f"start_date recibido: '{start_date}'")
-        print(f"end_date recibido: '{end_date}'")
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    except ValueError:
-        return jsonify({
-            "error": "Invalid date format. Use YYYY-MM-DD"
-        }), 400
-
-    TICKER = "^737809-COP-STRD"
-
-    try:
-        df = yf.download(
-            TICKER,
-            start=start_dt.strftime("%Y-%m-%d"),
-            end=(end_dt + timedelta(days=1)).strftime("%Y-%m-%d"),
-            interval="1d",
-            progress=False
-        )
-        print("DataFrame descargado:")
-        print(df)
-        print("Columnas del DataFrame:", df.columns)
-        print("Índice del DataFrame:", df.index)
-        # Filtrar explícitamente el rango solicitado
-        if not df.empty:
-            # Asegurar que el índice sea datetime y normalizar fechas para ignorar zona horaria
-            if not pd.api.types.is_datetime64_any_dtype(df.index):
-                df.index = pd.to_datetime(df.index)
-            df.index = df.index.normalize()
-            start_norm = pd.to_datetime(start_dt).normalize()
-            end_norm = pd.to_datetime(end_dt).normalize()
-            df = df[(df.index >= start_norm) & (df.index <= end_norm)]
-
-        # Fallback: último valor disponible
-        if df.empty:
-            df = yf.Ticker(TICKER).history(period="1d")
-
-        # Si sigue vacío → respuesta válida, no error
-        if df.empty:
-            return jsonify({
-                "data": [],
-                "warning": "No historical data available, only last value exists"
-            }), 200
-
-        # Aplanar columnas si vienen como MultiIndex
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
+        response = scraper.get(url, headers=headers)
+        if response.status_code != 200:
+            return jsonify({"error": "Failed to fetch data"}), 500
+        datos = json.loads(response.text)
         result = []
-        for index, row in df.iterrows():
-            if "Close" in row and pd.notna(row["Close"]):
-                result.append({
-                    "date": index.strftime("%Y-%m-%d"),
-                    "value": float(row["Close"])
-                })
-
+        for item in datos.get('data', []):
+            # Convertir el valor a float, reemplazando separadores de miles y decimales
+            valor = str(item['last_close']).replace('.', '').replace(',', '.')
+            try:
+                valor = float(valor)
+            except Exception:
+                valor = None
+            result.append({
+                "date": item['rowDate'],
+                "value": valor
+            })
         return jsonify({
-            "ticker": TICKER,
+            "ticker": "COLCAP",
             "count": len(result),
             "data": result
         }), 200
-
     except Exception as e:
         return jsonify({
             "error": "Internal server error",
@@ -85,6 +54,4 @@ def get_colcap():
 
 
 if __name__ == "__main__":
-    import yfinance as yf
-    print(f"Versión de yfinance: {yf.__version__}")
     app.run(port=5001)
