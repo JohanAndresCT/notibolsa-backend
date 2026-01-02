@@ -13,20 +13,26 @@ spec:
         app: aggregator
     spec:
       containers:
-      - name: aggregator
-        image: aggregator:latest
-        imagePullPolicy: IfNotPresent
-        
-        ports:
-        - containerPort: 5000
+        - name: aggregator
+          image: aggregator:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5002
+          env:
+            - name: COMMONCRAWL_SERVICE
+              value: "http://commoncrawl:5003/process"
+            - name: COLCAP_SERVICE
+              value: "http://colcap:5001/colcap"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aggregator
 spec:
+  type: NodePort
   selector:
     app: aggregator
   ports:
-    - port: 5000
-      targetPort: 5000
+    - port: 5002
+      targetPort: 5002
+      nodePort: 30082

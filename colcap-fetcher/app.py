@@ -47,11 +47,14 @@ def get_colcap():
             "data": result
         }), 200
     except Exception as e:
-        return jsonify({
-            "error": "Internal server error",
-            "detail": str(e)
-        }), 500
+        return jsonify({"error": "Internal server error", "detail": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run(port=5001)
+    import os
+
+    import yfinance as yf
+
+    print(f"Versión de yfinance: {yf.__version__}")
+    port = int(os.getenv("PORT", 5001))
+    app.run(host="0.0.0.0", port=port)
