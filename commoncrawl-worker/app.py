@@ -1,6 +1,9 @@
+import gzip
+import json
+from datetime import datetime
+from io import BytesIO
 
 import requests
-from flask import Flask, request, jsonify
 from bs4 import BeautifulSoup
 import gzip
 from io import BytesIO
@@ -107,48 +110,126 @@ def extract_date_from_soup(soup):
 
 
 CC_INDICES = [
-    "CC-MAIN-2008-2009", "CC-MAIN-2009-2010",
-    "CC-MAIN-2012", "CC-MAIN-2013-20", "CC-MAIN-2013-48",
-    "CC-MAIN-2014-10", "CC-MAIN-2014-15", "CC-MAIN-2014-23",
-    "CC-MAIN-2014-35", "CC-MAIN-2014-41", "CC-MAIN-2014-42",
-    "CC-MAIN-2014-49", "CC-MAIN-2014-52",
-    "CC-MAIN-2015-06", "CC-MAIN-2015-11", "CC-MAIN-2015-14",
-    "CC-MAIN-2015-18", "CC-MAIN-2015-22", "CC-MAIN-2015-27",
-    "CC-MAIN-2015-35", "CC-MAIN-2015-40", "CC-MAIN-2015-48",
-    "CC-MAIN-2016-07", "CC-MAIN-2016-18", "CC-MAIN-2016-22",
-    "CC-MAIN-2016-26", "CC-MAIN-2016-30", "CC-MAIN-2016-36",
-    "CC-MAIN-2016-40", "CC-MAIN-2016-44", "CC-MAIN-2016-50",
-    "CC-MAIN-2017-04", "CC-MAIN-2017-09", "CC-MAIN-2017-13",
-    "CC-MAIN-2017-17", "CC-MAIN-2017-22", "CC-MAIN-2017-26",
-    "CC-MAIN-2017-30", "CC-MAIN-2017-34", "CC-MAIN-2017-39",
-    "CC-MAIN-2017-43", "CC-MAIN-2017-47", "CC-MAIN-2017-51",
-    "CC-MAIN-2018-05", "CC-MAIN-2018-09", "CC-MAIN-2018-13",
-    "CC-MAIN-2018-17", "CC-MAIN-2018-22", "CC-MAIN-2018-26",
-    "CC-MAIN-2018-30", "CC-MAIN-2018-34", "CC-MAIN-2018-39",
-    "CC-MAIN-2018-43", "CC-MAIN-2018-47", "CC-MAIN-2018-51",
-    "CC-MAIN-2019-04", "CC-MAIN-2019-09", "CC-MAIN-2019-13",
-    "CC-MAIN-2019-18", "CC-MAIN-2019-22", "CC-MAIN-2019-26",
-    "CC-MAIN-2019-30", "CC-MAIN-2019-35", "CC-MAIN-2019-39",
-    "CC-MAIN-2019-43", "CC-MAIN-2019-47", "CC-MAIN-2019-51",
-    "CC-MAIN-2020-05", "CC-MAIN-2020-10", "CC-MAIN-2020-16",
-    "CC-MAIN-2020-24", "CC-MAIN-2020-29", "CC-MAIN-2020-34",
-    "CC-MAIN-2020-40", "CC-MAIN-2020-45", "CC-MAIN-2020-50",
-    "CC-MAIN-2021-04", "CC-MAIN-2021-10", "CC-MAIN-2021-17",
-    "CC-MAIN-2021-21", "CC-MAIN-2021-25", "CC-MAIN-2021-31",
-    "CC-MAIN-2021-39", "CC-MAIN-2021-43", "CC-MAIN-2021-49",
-    "CC-MAIN-2022-05", "CC-MAIN-2022-21", "CC-MAIN-2022-27",
-    "CC-MAIN-2022-33", "CC-MAIN-2022-40", "CC-MAIN-2022-49",
-    "CC-MAIN-2023-06", "CC-MAIN-2023-14", "CC-MAIN-2023-23",
-    "CC-MAIN-2023-40", "CC-MAIN-2023-50",
-    "CC-MAIN-2024-10", "CC-MAIN-2024-18", "CC-MAIN-2024-22",
-    "CC-MAIN-2024-26", "CC-MAIN-2024-30", "CC-MAIN-2024-33",
-    "CC-MAIN-2024-38", "CC-MAIN-2024-42", "CC-MAIN-2024-46",
+    "CC-MAIN-2008-2009",
+    "CC-MAIN-2009-2010",
+    "CC-MAIN-2012",
+    "CC-MAIN-2013-20",
+    "CC-MAIN-2013-48",
+    "CC-MAIN-2014-10",
+    "CC-MAIN-2014-15",
+    "CC-MAIN-2014-23",
+    "CC-MAIN-2014-35",
+    "CC-MAIN-2014-41",
+    "CC-MAIN-2014-42",
+    "CC-MAIN-2014-49",
+    "CC-MAIN-2014-52",
+    "CC-MAIN-2015-06",
+    "CC-MAIN-2015-11",
+    "CC-MAIN-2015-14",
+    "CC-MAIN-2015-18",
+    "CC-MAIN-2015-22",
+    "CC-MAIN-2015-27",
+    "CC-MAIN-2015-35",
+    "CC-MAIN-2015-40",
+    "CC-MAIN-2015-48",
+    "CC-MAIN-2016-07",
+    "CC-MAIN-2016-18",
+    "CC-MAIN-2016-22",
+    "CC-MAIN-2016-26",
+    "CC-MAIN-2016-30",
+    "CC-MAIN-2016-36",
+    "CC-MAIN-2016-40",
+    "CC-MAIN-2016-44",
+    "CC-MAIN-2016-50",
+    "CC-MAIN-2017-04",
+    "CC-MAIN-2017-09",
+    "CC-MAIN-2017-13",
+    "CC-MAIN-2017-17",
+    "CC-MAIN-2017-22",
+    "CC-MAIN-2017-26",
+    "CC-MAIN-2017-30",
+    "CC-MAIN-2017-34",
+    "CC-MAIN-2017-39",
+    "CC-MAIN-2017-43",
+    "CC-MAIN-2017-47",
+    "CC-MAIN-2017-51",
+    "CC-MAIN-2018-05",
+    "CC-MAIN-2018-09",
+    "CC-MAIN-2018-13",
+    "CC-MAIN-2018-17",
+    "CC-MAIN-2018-22",
+    "CC-MAIN-2018-26",
+    "CC-MAIN-2018-30",
+    "CC-MAIN-2018-34",
+    "CC-MAIN-2018-39",
+    "CC-MAIN-2018-43",
+    "CC-MAIN-2018-47",
+    "CC-MAIN-2018-51",
+    "CC-MAIN-2019-04",
+    "CC-MAIN-2019-09",
+    "CC-MAIN-2019-13",
+    "CC-MAIN-2019-18",
+    "CC-MAIN-2019-22",
+    "CC-MAIN-2019-26",
+    "CC-MAIN-2019-30",
+    "CC-MAIN-2019-35",
+    "CC-MAIN-2019-39",
+    "CC-MAIN-2019-43",
+    "CC-MAIN-2019-47",
+    "CC-MAIN-2019-51",
+    "CC-MAIN-2020-05",
+    "CC-MAIN-2020-10",
+    "CC-MAIN-2020-16",
+    "CC-MAIN-2020-24",
+    "CC-MAIN-2020-29",
+    "CC-MAIN-2020-34",
+    "CC-MAIN-2020-40",
+    "CC-MAIN-2020-45",
+    "CC-MAIN-2020-50",
+    "CC-MAIN-2021-04",
+    "CC-MAIN-2021-10",
+    "CC-MAIN-2021-17",
+    "CC-MAIN-2021-21",
+    "CC-MAIN-2021-25",
+    "CC-MAIN-2021-31",
+    "CC-MAIN-2021-39",
+    "CC-MAIN-2021-43",
+    "CC-MAIN-2021-49",
+    "CC-MAIN-2022-05",
+    "CC-MAIN-2022-21",
+    "CC-MAIN-2022-27",
+    "CC-MAIN-2022-33",
+    "CC-MAIN-2022-40",
+    "CC-MAIN-2022-49",
+    "CC-MAIN-2023-06",
+    "CC-MAIN-2023-14",
+    "CC-MAIN-2023-23",
+    "CC-MAIN-2023-40",
+    "CC-MAIN-2023-50",
+    "CC-MAIN-2024-10",
+    "CC-MAIN-2024-18",
+    "CC-MAIN-2024-22",
+    "CC-MAIN-2024-26",
+    "CC-MAIN-2024-30",
+    "CC-MAIN-2024-33",
+    "CC-MAIN-2024-38",
+    "CC-MAIN-2024-42",
+    "CC-MAIN-2024-46",
     "CC-MAIN-2024-51",
-    "CC-MAIN-2025-05", "CC-MAIN-2025-08", "CC-MAIN-2025-13",
-    "CC-MAIN-2025-18", "CC-MAIN-2025-21", "CC-MAIN-2025-26",
-    "CC-MAIN-2025-30", "CC-MAIN-2025-33", "CC-MAIN-2025-38",
-    "CC-MAIN-2025-43", "CC-MAIN-2025-47", "CC-MAIN-2025-51"
+    "CC-MAIN-2025-05",
+    "CC-MAIN-2025-08",
+    "CC-MAIN-2025-13",
+    "CC-MAIN-2025-18",
+    "CC-MAIN-2025-21",
+    "CC-MAIN-2025-26",
+    "CC-MAIN-2025-30",
+    "CC-MAIN-2025-33",
+    "CC-MAIN-2025-38",
+    "CC-MAIN-2025-43",
+    "CC-MAIN-2025-47",
+    "CC-MAIN-2025-51",
 ]
+
 
 @app.route("/process", methods=["GET"])
 def process():
@@ -172,18 +253,18 @@ def process():
     print(f"[DEBUG] Rangos de fechas creados: {date_ranges}", flush=True)
 
 
-    # Permitir múltiples índices separados por coma y buscar solo en esos
     if index:
-        indices_to_search = [i.strip() for i in index.split(',') if i.strip()]
+        indices_to_search = [i.strip() for i in index.split(",") if i.strip()]
         print(f"[DEBUG] Indices a buscar: {indices_to_search}", flush=True)
     else:
         indices_to_search = CC_INDICES
         print(f"[DEBUG] Usando todos los índices predefinidos", flush=True)
 
-    # Si se pasa keyword, buscar páginas que la contengan usando warcio
     if keyword:
         max_results = 20  # Limitar para evitar sobrecarga
         matching_urls = []
+        lines_count = 0
+
         for idx in indices_to_search:
             url = (
                 f"https://index.commoncrawl.org/{idx}-index"
@@ -194,11 +275,11 @@ def process():
                 r = requests.get(url, timeout=15)
                 if r.status_code == 200:
                     lines = r.text.splitlines()
+                    lines_count += len(lines)
                     print(f"Líneas recibidas: {len(lines)}", flush=True)
                     for i, line in enumerate(lines):
                         if len(matching_urls) >= max_results:
                             break
-                        record = None
                         try:
                             record = json.loads(line)
                         except Exception as e:
@@ -208,9 +289,8 @@ def process():
                         offset = int(record.get("offset", 0))
                         length = int(record.get("length", 0))
                         page_url = record.get("url", "")
-                        # Descargar fragmento WARC
                         warc_url = f"https://data.commoncrawl.org/{warc_filename}"
-                        headers = {"Range": f"bytes={offset}-{offset+length-1}"}
+                        headers = {"Range": f"bytes={offset}-{offset + length - 1}"}
                         try:
                             #print("Analizando pagina: ", page_url, flush=True)
                             if keyword.lower() in page_url:
@@ -308,4 +388,7 @@ def process():
     })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    import os
+
+    port = int(os.getenv("PORT", 5003))
+    app.run(host="0.0.0.0", port=port)
