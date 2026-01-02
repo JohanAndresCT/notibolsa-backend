@@ -153,7 +153,7 @@ CC_INDICES = [
 @app.route("/process", methods=["GET"])
 def process():
     print("=== INICIO DE PROCESS ===", flush=True)
-    domain = request.args.get("term")
+    #domain = request.args.get("term")
     index = request.args.get("index")
     print(f"[DEBUG] Parámetro index recibido: '{index}'", flush=True)
     keyword = request.args.get("keyword")
@@ -172,14 +172,6 @@ def process():
     print(f"[DEBUG] Rangos de fechas creados: {date_ranges}", flush=True)
 
 
-    if not domain:
-        print("[DEBUG] Falta el parámetro term, devolviendo 400", flush=True)
-        return jsonify({"error": "Missing term"}), 400
-        if not index:
-            print("[DEBUG] Falta el parámetro index, devolviendo 400")
-            return jsonify({"error": "Missing index"}), 400
-        indices_to_search = [index.strip()]
-
     # Permitir múltiples índices separados por coma y buscar solo en esos
     if index:
         indices_to_search = [i.strip() for i in index.split(',') if i.strip()]
@@ -190,12 +182,12 @@ def process():
 
     # Si se pasa keyword, buscar páginas que la contengan usando warcio
     if keyword:
-        max_results = 10  # Limitar para evitar sobrecarga
+        max_results = 20  # Limitar para evitar sobrecarga
         matching_urls = []
         for idx in indices_to_search:
             url = (
                 f"https://index.commoncrawl.org/{idx}-index"
-                f"?url={domain}/*&output=json"
+                f"?url=elespectador.com/*&output=json"
             )
             print(f"Consultando: {url}", flush=True)
             try:
@@ -220,50 +212,45 @@ def process():
                         warc_url = f"https://data.commoncrawl.org/{warc_filename}"
                         headers = {"Range": f"bytes={offset}-{offset+length-1}"}
                         try:
-                            warc_resp = requests.get(warc_url, headers=headers, timeout=20)
-                            if warc_resp.status_code == 206:
-                                with gzip.GzipFile(fileobj=BytesIO(warc_resp.content)) as gz:
-                                    warc_stream = BytesIO(gz.read())
-                                    for warc_record in ArchiveIterator(warc_stream):
-                                        if warc_record.rec_type == 'response' and 'html' in warc_record.http_headers.get('Content-Type', '').lower():
-                                            html_content = warc_record.content_stream().read().decode('utf-8', errors='ignore')
-                                            soup = BeautifulSoup(html_content, 'html.parser')
+                            #print("Analizando pagina: ", page_url, flush=True)
+                            if keyword.lower() in page_url:
+                                print(f"Coincidencia encontrada", flush=True)
+                                warc_resp = requests.get(warc_url, headers=headers, timeout=20)
+                                if warc_resp.status_code == 206:
+                                    with gzip.GzipFile(fileobj=BytesIO(warc_resp.content)) as gz:
+                                        warc_stream = BytesIO(gz.read())
+                                        for warc_record in ArchiveIterator(warc_stream):
+                                            if warc_record.rec_type == 'response' and 'html' in warc_record.http_headers.get('Content-Type', '').lower():        
+                                                html_content = warc_record.content_stream().read().decode('utf-8', errors='ignore')
+                                                soup = BeautifulSoup(html_content, 'html.parser')   
+                                                #text = soup.get_text(separator=' ', strip=True).lower()
 
-                                            #text = soup.get_text(separator=' ', strip=True).lower()
-
-                                            if keyword.lower() in page_url:
-                                                print(f"Coincidencia encontrada: {page_url}", flush=True)
-                                                
                                                 # Extract title
                                                 title_tag = soup.find('title')
                                                 title = title_tag.get_text(strip=True) if title_tag else "No title"
                                                 print(f"[DEBUG] Title: {title}", flush=True)
-                                                
+                                                    
                                                 # Check if title already seen
                                                 if title in seen_titles:
                                                     print(f"[DEBUG] Título duplicado, saltando: {title}", flush=True)
                                                     continue
                                                 
-                                                seen_titles.add(title)
-                                                matching_urls.append(page_url)
-                                                print(f"[DEBUG] Nuevo título agregado al conjunto. Total títulos únicos: {len(seen_titles)}", flush=True)
-                                                
 
                                                 # Intentar extraer datePublished desde JSON-LD (NewsArticle/Article/BlogPosting)
                                                 date_news = extract_date_from_soup(soup)
-                                                
+                                                print(f"[DEBUG] date_news: {date_news}", flush=True)
                                                 # Limpiar scripts y estilos para el resto del parseo
                                                 for tag in soup(["script", "style"]):
                                                     tag.extract()
                                                 
-                                                if not date_news:
-                                                    print("No se encontró la fecha en la página.", flush=True)
+                                                if date_news is None:
+                                                    continue
                                                 else:
-                                                    # Normalizar fecha para comparaciones
-                                                    #normalized_date = normalize_date(date_news)
+                                                    seen_titles.add(title)
+                                                    matching_urls.append(page_url)
+                                                    print(f"[DEBUG] Nuevo título agregado al conjunto. Total títulos únicos: {len(seen_titles)}", flush=True)
                                                     print(f"[DEBUG] Original date: {date_news}", flush=True)
-                                                    #print(f"[DEBUG] Normalized date: {normalized_date}", flush=True)
-                                                    #date_news = normalized_date
+
                                                 
                                                 # Contar el numero de noticias por rango de fecha
                                                 for i in range(len(date_ranges)-1):
@@ -275,9 +262,9 @@ def process():
                                                             if date_news>date_ranges[i-1][0]:
                                                                 date_ranges[i-1][1] += 1
                                                                 print(f"[DEBUG] Incrementando contador para rango {date_ranges[i-1]}", flush=True)
-                                                    else:
-                                                        print(f"[DEBUG] La noticia del {date_news} cae después del rango {date_ranges[i][0]}", flush=True)
-                
+                                                    #else:
+                                                        #print(f"[DEBUG] La noticia del {date_news} cae después del rango {date_ranges[i][0]}", flush=True)
+            
                                                 
                         except Exception as e:
                             print(f"Error al descargar/procesar WARC: {e}", flush=True)
@@ -286,7 +273,7 @@ def process():
             if len(matching_urls) >= max_results:
                 break
         return jsonify({
-            "domain": domain,
+            "domain": "elespectador.com",
             "indices_searched": len(indices_to_search),
             "keyword": keyword,
             "matching_urls": matching_urls,
@@ -299,7 +286,7 @@ def process():
     for idx in indices_to_search:
         url = (
             f"https://index.commoncrawl.org/{idx}-index"
-            f"?url={domain}&output=json"
+            f"?url=elespectador.com/*&output=json"
         )
         print(f"Consultando: {url}", flush=True)
         try:
@@ -315,7 +302,7 @@ def process():
 
     print(f"Total news_count: {total}", flush=True)
     return jsonify({
-        "domain": domain,
+        "domain": "elespectador.com",
         "indices_searched": len(indices_to_search),
         "news_count": total
     })
