@@ -3,7 +3,7 @@ FROM python:3.10-slim
 WORKDIR /app
 COPY app.py .
 
-RUN pip install flask yfinance pandas
+RUN pip install flask cloudscraper
 
 ENV PYTHONUNBUFFERED=1
 
