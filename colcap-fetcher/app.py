@@ -13,7 +13,7 @@ def get_colcap():
     if not start_date or not end_date:
         return jsonify({"error": "Missing date parameters"}), 400
 
-    url = f"https://api.investing.com/api/financialdata/historical/49642?start-date={start_date}&end-date={end_date}&time-frame=Daily&add-missing-rows=false"
+    url = f"https://api.investing.com/api/financialdata/historical/49642?start-date={start_date}&end-date={end_date}&time-frame=Monthly&add-missing-rows=false"
     headers = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "es-419,es;q=0.9",
